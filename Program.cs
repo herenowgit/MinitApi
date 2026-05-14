@@ -25,6 +25,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
     var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
         ?? throw new InvalidOperationException("Missing DATABASE_URL environment variable");
+
+    // Debug: log connection string shape to diagnose Npgsql format rejection
+    var preview = connectionString.Length > 10
+        ? $"{connectionString[..10]}... (length: {connectionString.Length})"
+        : $"(length: {connectionString.Length}, too short to preview)";
+    Console.WriteLine($"[DEBUG] DATABASE_URL => {preview}");
+
     options.UseNpgsql(connectionString);
 });
 
