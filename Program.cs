@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Workspace.Data;
 using Workspace.Endpoints;
 using Workspace.Services;
@@ -26,11 +27,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
         ?? throw new InvalidOperationException("Missing DATABASE_URL environment variable");
 
-    // Debug: log connection string shape to diagnose Npgsql format rejection
-    var preview = connectionString.Length > 10
-        ? $"{connectionString[..10]}... (length: {connectionString.Length})"
-        : $"(length: {connectionString.Length}, too short to preview)";
-    Console.WriteLine($"[DEBUG] DATABASE_URL => {preview}");
+    // Convert postgresql:// or postgres:// URI to Npgsql key=value connection string
+    if (connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+        connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+    {
+        connectionString = new NpgsqlConnectionStringBuilder(connectionString).ConnectionString;
+    }
 
     options.UseNpgsql(connectionString);
 });
