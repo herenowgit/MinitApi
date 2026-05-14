@@ -1,7 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Workspace.Data;
 using Workspace.Endpoints;
 using Workspace.Services;
@@ -27,11 +26,22 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
         ?? throw new InvalidOperationException("Missing DATABASE_URL environment variable");
 
-    // Convert postgresql:// or postgres:// URI to Npgsql key=value connection string
+    // Manually parse postgresql:// or postgres:// URI into a key=value connection string
     if (connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
         connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
     {
-        connectionString = new NpgsqlConnectionStringBuilder(connectionString).ConnectionString;
+        Console.WriteLine($"[DB] Raw DATABASE_URL prefix: {connectionString[..Math.Min(20, connectionString.Length)]}...");
+
+        var uri = new Uri(connectionString);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var user = Uri.UnescapeDataString(userInfo[0]);
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+        var host = uri.Host;
+        var dbPort = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+
+        connectionString = $"Host={host};Port={dbPort};Username={user};Password={password};Database={database}";
+        Console.WriteLine($"[DB] Built connection string prefix: {connectionString[..Math.Min(30, connectionString.Length)]}...");
     }
 
     options.UseNpgsql(connectionString);
