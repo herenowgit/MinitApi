@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Workspace.Data;
 using Workspace.Endpoints;
 using Workspace.Services;
+using Workspace.WebSockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,13 +24,33 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         return;
     }
 
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("Missing ConnectionStrings:DefaultConnection");
+    var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+        ?? throw new InvalidOperationException("Missing DATABASE_URL environment variable");
+
+    // Manually parse postgresql:// or postgres:// URI into a key=value connection string
+    if (connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+        connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"[DB] Raw DATABASE_URL prefix: {connectionString[..Math.Min(20, connectionString.Length)]}...");
+
+        var uri = new Uri(connectionString);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var user = Uri.UnescapeDataString(userInfo[0]);
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+        var host = uri.Host;
+        var dbPort = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+
+        connectionString = $"Host={host};Port={dbPort};Username={user};Password={password};Database={database}";
+        Console.WriteLine($"[DB] Built connection string prefix: {connectionString[..Math.Min(30, connectionString.Length)]}...");
+    }
+
     options.UseNpgsql(connectionString);
 });
 
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddSingleton<ICodeGenerator, CodeGenerator>();
+builder.Services.AddSingleton<SignalingRoomManager>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -74,6 +95,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(30)
+});
+
 app.UseExceptionHandler();
 app.UseStatusCodePages(async context =>
 {
@@ -95,6 +121,27 @@ app.UseStatusCodePages(async context =>
 app.UseRateLimiter();
 
 app.MapGet("/", () => Results.Ok(new { service = "call-usage-api", utcNow = DateTime.UtcNow }));
+
+// ── WebRTC Signaling ──────────────────────────────────────────────────────
+// Peers connect here to exchange SDP offers/answers and ICE candidates.
+// Query params: ?callId=<guid>&userId=<guid>
+app.MapGet("/ws", async (
+    HttpContext context,
+    SignalingRoomManager roomManager,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
+        await context.Response.WriteAsync("WebSocket connection required.", ct);
+        return;
+    }
+
+    await SignalingHandler.HandleAsync(context, roomManager, logger, ct);
+})
+.WithTags("Signaling")
+.WithSummary("WebRTC signaling relay — connect with ?callId=<guid>&userId=<guid>");
 
 var api = app.MapGroup("/api");
 api.MapUserEndpoints();
