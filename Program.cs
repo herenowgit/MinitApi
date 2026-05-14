@@ -23,8 +23,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         return;
     }
 
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("Missing ConnectionStrings:DefaultConnection");
+    var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+        ?? throw new InvalidOperationException("Missing DATABASE_URL environment variable");
     options.UseNpgsql(connectionString);
 });
 
