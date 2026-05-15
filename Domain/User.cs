@@ -14,4 +14,5 @@ public sealed class User
     public ICollection<CallSession> CreatedCallSessions { get; set; } = new List<CallSession>();
     public ICollection<CallParticipant> CallParticipants { get; set; } = new List<CallParticipant>();
     public ICollection<UsageAdjustment> UsageAdjustments { get; set; } = new List<UsageAdjustment>();
+    public ICollection<PushToken> PushTokens { get; set; } = new List<PushToken>();
 }

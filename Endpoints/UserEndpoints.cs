@@ -23,6 +23,16 @@ public static class UserEndpoints
             .WithSummary("Find user by invite code")
             .RequireRateLimiting("public-per-ip");
 
+        users.MapPut("/{userId:guid}/push-tokens", RegisterPushTokenAsync)
+            .WithName("RegisterPushToken")
+            .WithSummary("Register or refresh an FCM push token for a user")
+            .RequireRateLimiting("public-per-ip");
+
+        users.MapDelete("/{userId:guid}/push-tokens/{token}", DeletePushTokenAsync)
+            .WithName("DeletePushToken")
+            .WithSummary("Remove an FCM push token (logout / app removal)")
+            .RequireRateLimiting("public-per-ip");
+
         return users;
     }
 
@@ -126,4 +136,94 @@ public static class UserEndpoints
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException?.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) == true
            || ex.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<IResult> RegisterPushTokenAsync(
+        Guid userId,
+        [FromBody] RegisterPushTokenRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var token = request.Token?.Trim() ?? string.Empty;
+        if (token.Length < 8)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["token"] = ["Token must be at least 8 characters."]
+            });
+        }
+
+        var userExists = await db.Users.AnyAsync(x => x.Id == userId && x.IsActive, ct);
+        if (!userExists)
+        {
+            return Results.Problem(
+                title: "User not found",
+                detail: $"User '{userId}' does not exist or is inactive.",
+                statusCode: StatusCodes.Status404NotFound,
+                type: "user_not_found");
+        }
+
+        var platform = string.IsNullOrWhiteSpace(request.Platform) ? "android" : request.Platform.Trim().ToLowerInvariant();
+        var deviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? null : request.DeviceId.Trim();
+        var nowUtc = DateTime.UtcNow;
+
+        // Tokens are globally unique to a device. If this token is currently
+        // registered to a different user (account switch on the same device),
+        // detach it first so the user index doesn't double-count it.
+        var others = await db.PushTokens
+            .Where(x => x.Token == token && x.UserId != userId)
+            .ToListAsync(ct);
+        if (others.Count > 0)
+        {
+            db.PushTokens.RemoveRange(others);
+        }
+
+        var existing = await db.PushTokens
+            .FirstOrDefaultAsync(x => x.UserId == userId && x.Token == token, ct);
+
+        PushToken entity;
+        if (existing is null)
+        {
+            entity = new PushToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Token = token,
+                DeviceId = deviceId,
+                Platform = platform,
+                CreatedAt = nowUtc,
+                LastSeenAt = nowUtc
+            };
+            db.PushTokens.Add(entity);
+        }
+        else
+        {
+            existing.DeviceId = deviceId ?? existing.DeviceId;
+            existing.Platform = platform;
+            existing.LastSeenAt = nowUtc;
+            entity = existing;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new PushTokenResponse(entity.Id, entity.UserId, entity.Platform, entity.LastSeenAt));
+    }
+
+    private static async Task<IResult> DeletePushTokenAsync(
+        Guid userId,
+        string token,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var normalized = token?.Trim() ?? string.Empty;
+        if (normalized.Length == 0)
+        {
+            return Results.NoContent();
+        }
+
+        var rows = await db.PushTokens
+            .Where(x => x.UserId == userId && x.Token == normalized)
+            .ExecuteDeleteAsync(ct);
+
+        return rows > 0 ? Results.NoContent() : Results.NotFound();
+    }
 }

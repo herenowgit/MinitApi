@@ -41,6 +41,8 @@ public static class CallEndpoints
         StartCallRequest request,
         AppDbContext db,
         QuotaService quotaService,
+        IServiceScopeFactory scopeFactory,
+        ILogger<Program> logger,
         CancellationToken ct)
     {
         if (request.CreatedByUserId == Guid.Empty || request.CalleeUserId == Guid.Empty)
@@ -118,6 +120,34 @@ public static class CallEndpoints
         db.CallSessions.Add(session);
         db.CallParticipants.Add(creatorParticipant);
         await db.SaveChangesAsync(ct);
+
+        // Fire-and-forget the incoming-call push so the response isn't blocked by FCM.
+        // Uses its own DI scope because the request scope (and its AppDbContext) is
+        // disposed as soon as we return. PushService swallows its own errors.
+        var calleeId = callee.Id;
+        var sessionId = session.Id;
+        var callerId = creator.Id;
+        var callerDisplayName = creator.DisplayName;
+        var callerCode = creator.Code;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var bgPush = scope.ServiceProvider.GetRequiredService<PushService>();
+                await bgPush.SendIncomingCallAsync(
+                    calleeUserId: calleeId,
+                    callId: sessionId,
+                    callerUserId: callerId,
+                    callerDisplayName: callerDisplayName,
+                    callerCode: callerCode,
+                    ct: CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Background push for call {CallId} failed", sessionId);
+            }
+        }, CancellationToken.None);
 
         var response = new StartCallResponse
         {

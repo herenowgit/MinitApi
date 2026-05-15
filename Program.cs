@@ -1,4 +1,6 @@
 using System.Threading.RateLimiting;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workspace.Data;
@@ -49,8 +51,33 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<PushService>();
 builder.Services.AddSingleton<ICodeGenerator, CodeGenerator>();
 builder.Services.AddSingleton<SignalingRoomManager>();
+
+// Firebase Admin — required for FCM push to callee devices.
+// Credential is read from env var FIREBASE_SERVICE_ACCOUNT_JSON (Railway-friendly).
+// If unset, FCM pushes are skipped (PushService logs a warning).
+var firebaseCredentialJson = Environment.GetEnvironmentVariable("FIREBASE_SERVICE_ACCOUNT_JSON");
+if (!string.IsNullOrWhiteSpace(firebaseCredentialJson) && FirebaseApp.DefaultInstance is null)
+{
+    try
+    {
+        FirebaseApp.Create(new AppOptions
+        {
+            Credential = GoogleCredential.FromJson(firebaseCredentialJson)
+        });
+        Console.WriteLine("[FCM] FirebaseApp initialised");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[FCM] Failed to initialise FirebaseApp: {ex.Message}");
+    }
+}
+else if (string.IsNullOrWhiteSpace(firebaseCredentialJson))
+{
+    Console.WriteLine("[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — incoming-call pushes will be skipped");
+}
 
 builder.Services.AddRateLimiter(options =>
 {

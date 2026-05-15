@@ -11,6 +11,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<CallParticipant> CallParticipants => Set<CallParticipant>();
     public DbSet<MonthlyUsage> MonthlyUsages => Set<MonthlyUsage>();
     public DbSet<UsageAdjustment> UsageAdjustments => Set<UsageAdjustment>();
+    public DbSet<PushToken> PushTokens => Set<PushToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +77,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .WithMany()
             .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var pushToken = modelBuilder.Entity<PushToken>();
+        pushToken.ToTable("push_tokens");
+        pushToken.HasKey(x => x.Id);
+        pushToken.Property(x => x.Token).IsRequired().HasMaxLength(512);
+        pushToken.Property(x => x.DeviceId).HasMaxLength(128);
+        pushToken.Property(x => x.Platform).IsRequired().HasMaxLength(16);
+        pushToken.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
+        pushToken.Property(x => x.LastSeenAt).HasColumnType("timestamp with time zone");
+        pushToken.HasOne(x => x.User)
+            .WithMany(x => x.PushTokens)
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        pushToken.HasIndex(x => new { x.UserId, x.Token }).IsUnique();
 
         var usageAdjustment = modelBuilder.Entity<UsageAdjustment>();
         usageAdjustment.ToTable("usage_adjustments");

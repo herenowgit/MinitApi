@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Text;
 
 namespace Workspace.WebSockets;
 
@@ -35,6 +36,13 @@ public static class SignalingHandler
         roomManager.Join(callId, userId, ws);
         logger.LogInformation("Signaling: peer {UserId} joined room {CallId} ({PeerCount} peers)",
             userId, callId, roomManager.PeerCount(callId));
+
+        // Notify any existing peers (e.g. the caller) that the new peer (callee)
+        // has joined the room. The caller waits for this before sending the SDP
+        // offer to avoid a race where the offer is broadcast to an empty room.
+        var joinedJson = $"{{\"type\":\"peer_joined\",\"from\":\"{userId}\",\"callId\":\"{callId}\"}}";
+        var joinedBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(joinedJson));
+        await roomManager.BroadcastAsync(callId, userId, joinedBytes, WebSocketMessageType.Text, ct);
 
         var buffer = new byte[BufferSize];
 
@@ -76,6 +84,19 @@ public static class SignalingHandler
             roomManager.Leave(callId, userId);
             logger.LogInformation("Signaling: peer {UserId} left room {CallId} ({PeerCount} peers remaining)",
                 userId, callId, roomManager.PeerCount(callId));
+
+            // Best-effort notify remaining peers that this one is gone.
+            // ct may already be cancelled; use CancellationToken.None.
+            try
+            {
+                var leftJson = $"{{\"type\":\"peer_left\",\"from\":\"{userId}\",\"callId\":\"{callId}\"}}";
+                var leftBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(leftJson));
+                await roomManager.BroadcastAsync(callId, userId, leftBytes, WebSocketMessageType.Text, CancellationToken.None);
+            }
+            catch
+            {
+                // ignored — peer cleanup is best-effort
+            }
         }
     }
 
