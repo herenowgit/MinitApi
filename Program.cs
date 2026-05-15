@@ -55,6 +55,12 @@ builder.Services.AddScoped<PushService>();
 builder.Services.AddSingleton<ICodeGenerator, CodeGenerator>();
 builder.Services.AddSingleton<SignalingRoomManager>();
 
+builder.Services.AddHttpClient(TurnService.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddScoped<ITurnService, TurnService>();
+
 // Firebase Admin — required for FCM push to callee devices.
 // Credential is read from env var FIREBASE_SERVICE_ACCOUNT_JSON (Railway-friendly).
 // If unset, FCM pushes are skipped (PushService logs a warning).
@@ -176,6 +182,7 @@ api.MapContactEndpoints();
 api.MapCallEndpoints();
 api.MapUsageEndpoints();
 api.MapAdminEndpoints();
+api.MapTurnEndpoints();
 
 app.Run();
 

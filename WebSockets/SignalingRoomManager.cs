@@ -53,4 +53,25 @@ public sealed class SignalingRoomManager
     /// <summary>Returns how many peers are currently in a room (useful for diagnostics).</summary>
     public int PeerCount(string callId) =>
         _rooms.TryGetValue(callId, out var room) ? room.Count : 0;
+
+    /// <summary>Returns the userIds currently in a room (snapshot — may change concurrently).</summary>
+    public IReadOnlyList<string> PeerUserIds(string callId) =>
+        _rooms.TryGetValue(callId, out var room)
+            ? room.Keys.ToList()
+            : Array.Empty<string>();
+
+    /// <summary>Sends a message to a single peer by userId. No-op if the peer is missing or closed.</summary>
+    public async Task SendToAsync(
+        string callId,
+        string targetUserId,
+        ArraySegment<byte> data,
+        WebSocketMessageType messageType,
+        CancellationToken ct)
+    {
+        if (!_rooms.TryGetValue(callId, out var room)) return;
+        if (!room.TryGetValue(targetUserId, out var socket)) return;
+        if (socket.State != WebSocketState.Open) return;
+
+        await socket.SendAsync(data, messageType, endOfMessage: true, ct);
+    }
 }

@@ -31,18 +31,32 @@ public static class SignalingHandler
             return;
         }
 
+        // Snapshot existing peers BEFORE we add ourselves so we can tell the
+        // new peer about whoever was already in the room.
+        var existingPeerIds = roomManager.PeerUserIds(callId);
+
         // ── Upgrade to WebSocket ──────────────────────────────────────────────
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         roomManager.Join(callId, userId, ws);
         logger.LogInformation("Signaling: peer {UserId} joined room {CallId} ({PeerCount} peers)",
             userId, callId, roomManager.PeerCount(callId));
 
-        // Notify any existing peers (e.g. the caller) that the new peer (callee)
-        // has joined the room. The caller waits for this before sending the SDP
-        // offer to avoid a race where the offer is broadcast to an empty room.
-        var joinedJson = $"{{\"type\":\"peer_joined\",\"from\":\"{userId}\",\"callId\":\"{callId}\"}}";
-        var joinedBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(joinedJson));
-        await roomManager.BroadcastAsync(callId, userId, joinedBytes, WebSocketMessageType.Text, ct);
+        // Notify existing peers (e.g. the caller) that the new peer (callee) joined.
+        // The caller waits for this before sending the SDP offer to avoid a race
+        // where the offer is broadcast to an empty room.
+        var joinedFromNewJson = $"{{\"type\":\"peer_joined\",\"from\":\"{userId}\",\"callId\":\"{callId}\"}}";
+        var joinedFromNewBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(joinedFromNewJson));
+        await roomManager.BroadcastAsync(callId, userId, joinedFromNewBytes, WebSocketMessageType.Text, ct);
+
+        // Also tell the new peer about anyone who was already in the room.
+        // Without this the new peer hangs forever if it joined second but is
+        // the SDP-offer sender (e.g. caller's FCM was processed after callee's).
+        foreach (var existingId in existingPeerIds)
+        {
+            var joinedFromExistingJson = $"{{\"type\":\"peer_joined\",\"from\":\"{existingId}\",\"callId\":\"{callId}\"}}";
+            var joinedFromExistingBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(joinedFromExistingJson));
+            await roomManager.SendToAsync(callId, userId, joinedFromExistingBytes, WebSocketMessageType.Text, ct);
+        }
 
         var buffer = new byte[BufferSize];
 
