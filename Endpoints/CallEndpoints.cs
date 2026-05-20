@@ -101,6 +101,7 @@ public static class CallEndpoints
         {
             Id = Guid.NewGuid(),
             CreatedByUserId = request.CreatedByUserId,
+            CalleeUserId = request.CalleeUserId,
             Provider = string.IsNullOrWhiteSpace(request.Provider) ? "internal" : request.Provider.Trim(),
             ProviderRoomId = string.IsNullOrWhiteSpace(request.ProviderRoomId) ? null : request.ProviderRoomId.Trim(),
             Status = CallSessionStatus.Active,

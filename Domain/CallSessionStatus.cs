@@ -5,5 +5,6 @@ public enum CallSessionStatus
     Created = 0,
     Active = 1,
     Ended = 2,
-    Cancelled = 3
+    Cancelled = 3,
+    Missed = 4
 }

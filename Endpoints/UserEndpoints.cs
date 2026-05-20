@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workspace.Data;
 using Workspace.Domain;
+using Workspace.Dtos.Calls;
 using Workspace.Dtos.Users;
 using Workspace.Services;
 
@@ -31,6 +32,11 @@ public static class UserEndpoints
         users.MapDelete("/{userId:guid}/push-tokens/{token}", DeletePushTokenAsync)
             .WithName("DeletePushToken")
             .WithSummary("Remove an FCM push token (logout / app removal)")
+            .RequireRateLimiting("public-per-ip");
+
+        users.MapGet("/{userId:guid}/calls/recent", GetRecentCallsAsync)
+            .WithName("GetRecentCalls")
+            .WithSummary("Recent calls (incoming + outgoing) for a user")
             .RequireRateLimiting("public-per-ip");
 
         return users;
@@ -225,5 +231,89 @@ public static class UserEndpoints
             .ExecuteDeleteAsync(ct);
 
         return rows > 0 ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> GetRecentCallsAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct,
+        [FromQuery] int limit = 50)
+    {
+        if (limit is < 1 or > 200) limit = 50;
+
+        var userExists = await db.Users.AnyAsync(x => x.Id == userId, ct);
+        if (!userExists)
+        {
+            return Results.Problem(
+                title: "User not found",
+                detail: $"User '{userId}' does not exist.",
+                statusCode: StatusCodes.Status404NotFound,
+                type: "user_not_found");
+        }
+
+        // A call is relevant to this user if they either created it OR appear
+        // in its participants table. Pull the IDs in one query, then load the
+        // full sessions + participants + counterpart user info in a second
+        // pass keyed by those IDs.
+        var relevantCallIds = await (
+            from c in db.CallSessions
+            where c.CreatedByUserId == userId
+                  || db.CallParticipants.Any(p => p.CallSessionId == c.Id && p.UserId == userId)
+            orderby c.CreatedAt descending
+            select c.Id
+        ).Take(limit).ToListAsync(ct);
+
+        if (relevantCallIds.Count == 0)
+        {
+            return Results.Ok(Array.Empty<RecentCallResponse>());
+        }
+
+        var sessions = await db.CallSessions
+            .Where(c => relevantCallIds.Contains(c.Id))
+            .Include(c => c.Participants)
+            .ToListAsync(ct);
+
+        // For 1:1 calls the "other party" is whichever side isn't `userId`.
+        // For outgoing calls we use the persisted CalleeUserId so even
+        // never-answered calls show the correct counterpart name.
+        static Guid OtherPartyId(CallSession c, Guid me)
+        {
+            if (c.CreatedByUserId == me)
+            {
+                return c.CalleeUserId
+                    ?? c.Participants.FirstOrDefault(p => p.UserId != me)?.UserId
+                    ?? me;
+            }
+            return c.CreatedByUserId;
+        }
+
+        var otherUserIds = sessions.Select(c => OtherPartyId(c, userId)).Distinct().ToList();
+
+        var users = await db.Users
+            .AsNoTracking()
+            .Where(u => otherUserIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        var ordered = sessions.OrderByDescending(c => c.CreatedAt).ToList();
+        var result = ordered.Select(c =>
+        {
+            var otherUserId = OtherPartyId(c, userId);
+            users.TryGetValue(otherUserId, out var other);
+            var billed = c.Participants.FirstOrDefault(p => p.UserId == c.CreatedByUserId)?.BilledSeconds ?? 0;
+
+            return new RecentCallResponse(
+                CallId: c.Id,
+                Direction: c.CreatedByUserId == userId ? "outgoing" : "incoming",
+                Status: c.Status.ToString(),
+                OtherUserId: otherUserId,
+                OtherDisplayName: other?.DisplayName ?? string.Empty,
+                OtherCode: other?.Code ?? string.Empty,
+                CreatedAt: c.CreatedAt,
+                StartedAt: c.StartedAt,
+                EndedAt: c.EndedAt,
+                BilledSeconds: billed);
+        }).ToList();
+
+        return Results.Ok(result);
     }
 }

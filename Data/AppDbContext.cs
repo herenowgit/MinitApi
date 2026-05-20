@@ -52,6 +52,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .WithMany(x => x.CreatedCallSessions)
             .HasForeignKey(x => x.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
+        callSession.HasIndex(x => x.CalleeUserId);
 
         var callParticipant = modelBuilder.Entity<CallParticipant>();
         callParticipant.ToTable("call_participants");
