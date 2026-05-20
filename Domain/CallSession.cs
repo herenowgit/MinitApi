@@ -4,6 +4,7 @@ public sealed class CallSession
 {
     public Guid Id { get; set; }
     public Guid CreatedByUserId { get; set; }
+    public Guid? CalleeUserId { get; set; }
     public string Provider { get; set; } = "internal";
     public string? ProviderRoomId { get; set; }
     public CallSessionStatus Status { get; set; } = CallSessionStatus.Created;

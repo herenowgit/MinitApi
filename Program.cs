@@ -61,6 +61,8 @@ builder.Services.AddHttpClient(TurnService.HttpClientName, client =>
 });
 builder.Services.AddScoped<ITurnService, TurnService>();
 
+builder.Services.AddHostedService<CallTimeoutService>();
+
 // Firebase Admin — required for FCM push to callee devices.
 // Credential is read from env var FIREBASE_SERVICE_ACCOUNT_JSON (Railway-friendly).
 // If unset, FCM pushes are skipped (PushService logs a warning).
