@@ -80,7 +80,7 @@ public sealed class InviteService(AppDbContext dbContext, IConfiguration configu
             {
                 Id = Guid.NewGuid(),
                 OwnerUserId = request.OwnerUserId,
-                TokenHash = HashInviteCode(code),
+                TokenHash = code,// HashInviteCode(code),
                 CreatedAtUtc = nowUtc,
                 ExpiresAtUtc = nowUtc.AddMinutes(ttlMinutes),
                 MaxRedemptions = maxRedemptions,

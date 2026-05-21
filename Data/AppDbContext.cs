@@ -97,7 +97,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         var oneTimeInviteCode = modelBuilder.Entity<OneTimeInviteCode>();
         oneTimeInviteCode.ToTable("one_time_invite_codes");
         oneTimeInviteCode.HasKey(x => x.Id);
-        oneTimeInviteCode.Property(x => x.TokenHash).IsRequired().HasMaxLength(64).IsFixedLength();
+        oneTimeInviteCode.Property(x => x.TokenHash).IsRequired().HasMaxLength(64);//.IsFixedLength();
         oneTimeInviteCode.Property(x => x.ExpiresAtUtc).HasColumnType("timestamp with time zone");
         oneTimeInviteCode.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
         oneTimeInviteCode.Property(x => x.UsedAtUtc).HasColumnType("timestamp with time zone");
