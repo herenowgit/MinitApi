@@ -210,7 +210,7 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
         var activeBeforeBody = await activeBefore.ReadRequiredAsync<List<ActiveInviteResponse>>();
         var invite = Assert.Single(activeBeforeBody);
 
-        var revoke = await client.PostAsJsonAsync($"/api/invites/{invite.InviteCode}/revoke", new RevokeInviteRequest
+        var revoke = await client.PostAsJsonAsync($"/api/invites/{invite.id}/revoke", new RevokeInviteRequest
         {
             OwnerUserId = owner.UserId
         });
