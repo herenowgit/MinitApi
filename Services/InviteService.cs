@@ -31,7 +31,7 @@ public sealed class InviteService(AppDbContext dbContext, IConfiguration configu
         return new string(chars);
     }
 
-    public string HashInviteCode(string inviteCode)
+    public string HashInviteCode__(string inviteCode)
     {
         var normalized = NormalizeInviteCode(inviteCode);
         var pepper = configuration["Security:InviteCodePepper"];
@@ -147,7 +147,7 @@ public sealed class InviteService(AppDbContext dbContext, IConfiguration configu
         string tokenHash;
         try
         {
-            tokenHash = HashInviteCode(request.InviteCode);
+            tokenHash = request.InviteCode;// HashInviteCode();
         }
         catch (ArgumentException)
         {
@@ -276,7 +276,7 @@ public sealed class InviteService(AppDbContext dbContext, IConfiguration configu
             .Where(x => x.ExpiresAtUtc > nowUtc && x.RedemptionCount < x.MaxRedemptions)
             .OrderBy(x => x.ExpiresAtUtc)
             .Select(x => new ActiveInviteResponse(
-                x.Id,
+                x.TokenHash,
                 x.ExpiresAtUtc,
                 x.CreatedAtUtc,
                 x.MaxRedemptions,
