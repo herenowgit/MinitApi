@@ -174,8 +174,7 @@ namespace workspace.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character(64)")
-                        .IsFixedLength();
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTimeOffset?>("UsedAtUtc")
                         .HasColumnType("timestamp with time zone");

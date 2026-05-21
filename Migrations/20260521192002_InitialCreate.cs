@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace workspace.Migrations
 {
     /// <inheritdoc />
-    public partial class CreateDB : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -33,6 +33,7 @@ namespace workspace.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     CreatedByUserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    CalleeUserId = table.Column<Guid>(type: "uuid", nullable: true),
                     Provider = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
                     ProviderRoomId = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     Status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
@@ -91,6 +92,61 @@ namespace workspace.Migrations
                     table.PrimaryKey("PK_monthly_usage", x => new { x.UserId, x.MonthYYYYMM });
                     table.ForeignKey(
                         name: "FK_monthly_usage_users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "one_time_invite_codes",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    OwnerUserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    TokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ExpiresAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    UsedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    UsedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
+                    MaxRedemptions = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
+                    RedemptionCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    RevokedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_one_time_invite_codes", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_one_time_invite_codes_users_OwnerUserId",
+                        column: x => x.OwnerUserId,
+                        principalTable: "users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_one_time_invite_codes_users_UsedByUserId",
+                        column: x => x.UsedByUserId,
+                        principalTable: "users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "push_tokens",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Token = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                    DeviceId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    Platform = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    LastSeenAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_push_tokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_push_tokens_users_UserId",
                         column: x => x.UserId,
                         principalTable: "users",
                         principalColumn: "Id",
@@ -159,6 +215,11 @@ namespace workspace.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_call_sessions_CalleeUserId",
+                table: "call_sessions",
+                column: "CalleeUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_call_sessions_CreatedByUserId",
                 table: "call_sessions",
                 column: "CreatedByUserId");
@@ -172,6 +233,28 @@ namespace workspace.Migrations
                 name: "IX_contacts_OwnerUserId_ContactUserId",
                 table: "contacts",
                 columns: new[] { "OwnerUserId", "ContactUserId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_one_time_invite_codes_OwnerUserId_ExpiresAtUtc",
+                table: "one_time_invite_codes",
+                columns: new[] { "OwnerUserId", "ExpiresAtUtc" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_one_time_invite_codes_TokenHash",
+                table: "one_time_invite_codes",
+                column: "TokenHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_one_time_invite_codes_UsedByUserId",
+                table: "one_time_invite_codes",
+                column: "UsedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_push_tokens_UserId_Token",
+                table: "push_tokens",
+                columns: new[] { "UserId", "Token" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -197,6 +280,12 @@ namespace workspace.Migrations
 
             migrationBuilder.DropTable(
                 name: "monthly_usage");
+
+            migrationBuilder.DropTable(
+                name: "one_time_invite_codes");
+
+            migrationBuilder.DropTable(
+                name: "push_tokens");
 
             migrationBuilder.DropTable(
                 name: "usage_adjustments");
