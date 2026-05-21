@@ -4,6 +4,7 @@ using Workspace.Api.Tests.Infrastructure;
 using Workspace.Dtos.Admin;
 using Workspace.Dtos.Calls;
 using Workspace.Dtos.Contacts;
+using Workspace.Dtos.Invites;
 using Workspace.Dtos.Usage;
 using AdminUsageAdjustmentRequest = Workspace.Dtos.Admin.UsageAdjustmentRequest;
 using Workspace.Dtos.Users;
@@ -137,6 +138,97 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
         withKey.AssertStatus(HttpStatusCode.OK);
         var updated = await withKey.ReadRequiredAsync<UpdateUserLimitResponse>();
         Assert.Equal(1200, updated.MonthlyLimitSeconds);
+    }
+
+    [Fact]
+    public async Task Invite_CreateRedeem_ShouldAddMutualContactsAndRejectReuse()
+    {
+        using var client = factory.CreateClient();
+
+        var owner = await RegisterUserAsync(client, "InviteOwner");
+        var redeemer = await RegisterUserAsync(client, "InviteRedeemer");
+
+        client.DefaultRequestHeaders.Add("X-User-Id", owner.UserId.ToString());
+        var create = await client.PostAsJsonAsync("/api/invites/create", new CreateInviteRequest
+        {
+            OwnerUserId = owner.UserId
+        });
+        create.AssertStatus(HttpStatusCode.Created);
+        var created = await create.ReadRequiredAsync<CreateInviteResponse>();
+        Assert.Equal(10, created.InviteCode.Length);
+        Assert.True(created.ExpiresAtUtc > DateTimeOffset.UtcNow);
+
+        client.DefaultRequestHeaders.Remove("X-User-Id");
+        client.DefaultRequestHeaders.Add("X-User-Id", redeemer.UserId.ToString());
+        var redeem = await client.PostAsJsonAsync("/api/invites/redeem", new RedeemInviteRequest
+        {
+            RedeemerUserId = redeemer.UserId,
+            InviteCode = created.InviteCode
+        });
+        redeem.AssertStatus(HttpStatusCode.OK);
+        var redeemed = await redeem.ReadRequiredAsync<RedeemInviteResponse>();
+        Assert.True(redeemed.Success);
+        Assert.Equal(owner.UserId, redeemed.Contact?.UserId);
+
+        var ownerContacts = await client.GetAsync($"/api/contacts/{owner.UserId}");
+        ownerContacts.AssertStatus(HttpStatusCode.OK);
+        var ownerContactsBody = await ownerContacts.ReadRequiredAsync<List<ContactItemResponse>>();
+        Assert.Contains(ownerContactsBody, x => x.UserId == redeemer.UserId);
+
+        var redeemerContacts = await client.GetAsync($"/api/contacts/{redeemer.UserId}");
+        redeemerContacts.AssertStatus(HttpStatusCode.OK);
+        var redeemerContactsBody = await redeemerContacts.ReadRequiredAsync<List<ContactItemResponse>>();
+        Assert.Contains(redeemerContactsBody, x => x.UserId == owner.UserId);
+
+        var reuse = await client.PostAsJsonAsync("/api/invites/redeem", new RedeemInviteRequest
+        {
+            RedeemerUserId = redeemer.UserId,
+            InviteCode = created.InviteCode
+        });
+        reuse.AssertStatus(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Invite_Revoke_ShouldHideFromActiveListAndBlockRedemption()
+    {
+        using var client = factory.CreateClient();
+
+        var owner = await RegisterUserAsync(client, "RevokeOwner");
+        var redeemer = await RegisterUserAsync(client, "RevokeRedeemer");
+
+        client.DefaultRequestHeaders.Add("X-User-Id", owner.UserId.ToString());
+        var create = await client.PostAsJsonAsync("/api/invites/create", new CreateInviteRequest
+        {
+            OwnerUserId = owner.UserId,
+            MaxRedemptions = 2
+        });
+        create.AssertStatus(HttpStatusCode.Created);
+        var created = await create.ReadRequiredAsync<CreateInviteResponse>();
+
+        var activeBefore = await client.GetAsync($"/api/invites/active/{owner.UserId}");
+        activeBefore.AssertStatus(HttpStatusCode.OK);
+        var activeBeforeBody = await activeBefore.ReadRequiredAsync<List<ActiveInviteResponse>>();
+        var invite = Assert.Single(activeBeforeBody);
+
+        var revoke = await client.PostAsJsonAsync($"/api/invites/{invite.Id}/revoke", new RevokeInviteRequest
+        {
+            OwnerUserId = owner.UserId
+        });
+        revoke.AssertStatus(HttpStatusCode.OK);
+
+        var activeAfter = await client.GetAsync($"/api/invites/active/{owner.UserId}");
+        activeAfter.AssertStatus(HttpStatusCode.OK);
+        var activeAfterBody = await activeAfter.ReadRequiredAsync<List<ActiveInviteResponse>>();
+        Assert.Empty(activeAfterBody);
+
+        client.DefaultRequestHeaders.Remove("X-User-Id");
+        client.DefaultRequestHeaders.Add("X-User-Id", redeemer.UserId.ToString());
+        var redeem = await client.PostAsJsonAsync("/api/invites/redeem", new RedeemInviteRequest
+        {
+            RedeemerUserId = redeemer.UserId,
+            InviteCode = created.InviteCode
+        });
+        redeem.AssertStatus(HttpStatusCode.Gone);
     }
 
     private static async Task<RegisterUserResponse> RegisterUserAsync(HttpClient client, string displayName)

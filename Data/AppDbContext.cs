@@ -12,6 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<MonthlyUsage> MonthlyUsages => Set<MonthlyUsage>();
     public DbSet<UsageAdjustment> UsageAdjustments => Set<UsageAdjustment>();
     public DbSet<PushToken> PushTokens => Set<PushToken>();
+    public DbSet<OneTimeInviteCode> OneTimeInviteCodes => Set<OneTimeInviteCode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +93,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
         pushToken.HasIndex(x => new { x.UserId, x.Token }).IsUnique();
+
+        var oneTimeInviteCode = modelBuilder.Entity<OneTimeInviteCode>();
+        oneTimeInviteCode.ToTable("one_time_invite_codes");
+        oneTimeInviteCode.HasKey(x => x.Id);
+        oneTimeInviteCode.Property(x => x.TokenHash).IsRequired().HasMaxLength(64).IsFixedLength();
+        oneTimeInviteCode.Property(x => x.ExpiresAtUtc).HasColumnType("timestamp with time zone");
+        oneTimeInviteCode.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
+        oneTimeInviteCode.Property(x => x.UsedAtUtc).HasColumnType("timestamp with time zone");
+        oneTimeInviteCode.Property(x => x.RevokedAtUtc).HasColumnType("timestamp with time zone");
+        oneTimeInviteCode.Property(x => x.MaxRedemptions).HasDefaultValue(1);
+        oneTimeInviteCode.Property(x => x.RedemptionCount).HasDefaultValue(0);
+        oneTimeInviteCode.HasOne(x => x.OwnerUser)
+            .WithMany(x => x.OneTimeInviteCodes)
+            .HasForeignKey(x => x.OwnerUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        oneTimeInviteCode.HasOne(x => x.UsedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.UsedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        oneTimeInviteCode.HasIndex(x => x.TokenHash).IsUnique();
+        oneTimeInviteCode.HasIndex(x => new { x.OwnerUserId, x.ExpiresAtUtc });
 
         var usageAdjustment = modelBuilder.Entity<UsageAdjustment>();
         usageAdjustment.ToTable("usage_adjustments");
