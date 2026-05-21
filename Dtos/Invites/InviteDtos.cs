@@ -38,7 +38,7 @@ public sealed class RevokeInviteRequest
 public sealed record RevokeInviteResponse(bool Success);
 
 public sealed record ActiveInviteResponse(
-    string id,
+    string Id,
     DateTimeOffset ExpiresAtUtc,
     DateTimeOffset CreatedAtUtc,
     int MaxRedemptions,
