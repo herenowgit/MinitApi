@@ -22,7 +22,8 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>
             var inMemorySettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = "Host=unused;Database=unused",
-                ["Admin:ApiKey"] = TestAdminKey
+                ["Admin:ApiKey"] = TestAdminKey,
+                ["Security:InviteCodePepper"] = "integration-test-invite-code-pepper"
             };
 
             configBuilder.AddInMemoryCollection(inMemorySettings);

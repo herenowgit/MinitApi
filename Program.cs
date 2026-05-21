@@ -52,6 +52,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddScoped<PushService>();
+builder.Services.AddScoped<InviteService>();
 builder.Services.AddSingleton<ICodeGenerator, CodeGenerator>();
 builder.Services.AddSingleton<SignalingRoomManager>();
 
@@ -114,12 +115,33 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+
+    options.AddPolicy("invites-per-user-or-ip", context =>
+    {
+        var userKey = context.Request.Headers.TryGetValue("X-User-Id", out var userId)
+            ? userId.ToString()
+            : null;
+        var partitionKey = !string.IsNullOrWhiteSpace(userKey)
+            ? $"user:{userKey}"
+            : $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip"}";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: partitionKey,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
 });
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+if (!app.Environment.IsEnvironment("Testing"))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
@@ -185,6 +207,7 @@ api.MapCallEndpoints();
 api.MapUsageEndpoints();
 api.MapAdminEndpoints();
 api.MapTurnEndpoints();
+api.MapInviteEndpoints();
 
 app.Run();
 
