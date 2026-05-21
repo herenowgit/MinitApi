@@ -12,8 +12,8 @@ using Workspace.Data;
 namespace workspace.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260521144017_AddOneTimeInviteCodes")]
-    partial class AddOneTimeInviteCodes
+    [Migration("20260521192002_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -177,8 +177,7 @@ namespace workspace.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character(64)")
-                        .IsFixedLength();
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTimeOffset?>("UsedAtUtc")
                         .HasColumnType("timestamp with time zone");
