@@ -7,6 +7,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Contact> Contacts => Set<Contact>();
+    public DbSet<CallHistory> CallHistory => Set<CallHistory>();
     public DbSet<CallSession> CallSessions => Set<CallSession>();
     public DbSet<CallParticipant> CallParticipants => Set<CallParticipant>();
     public DbSet<MonthlyUsage> MonthlyUsages => Set<MonthlyUsage>();
@@ -22,6 +23,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         user.Property(x => x.DisplayName).IsRequired().HasMaxLength(80);
         user.Property(x => x.Code).IsRequired().HasMaxLength(8).IsFixedLength();
         user.Property(x => x.MonthlyLimitSeconds).HasDefaultValue(6000);
+        user.Property(x => x.AutoDeleteCallHistoryMode)
+            .HasConversion<int>()
+            .HasSentinel((AutoDeleteCallHistoryMode)0)
+            .HasDefaultValue(AutoDeleteCallHistoryMode.OneHour);
         user.Property(x => x.IsActive).HasDefaultValue(true);
         user.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
         user.HasIndex(x => x.Code).IsUnique();
@@ -39,6 +44,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasForeignKey(x => x.ContactUserId)
             .OnDelete(DeleteBehavior.Restrict);
         contact.HasIndex(x => new { x.OwnerUserId, x.ContactUserId }).IsUnique();
+
+        var callHistory = modelBuilder.Entity<CallHistory>();
+        callHistory.ToTable("call_history");
+        callHistory.HasKey(x => x.Id);
+        callHistory.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
+        callHistory.Property(x => x.IsDeleted).HasDefaultValue(false);
+        callHistory.Property(x => x.DeletedAtUtc).HasColumnType("timestamp with time zone");
+        callHistory.HasOne(x => x.User)
+            .WithMany(x => x.CallHistory)
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        callHistory.HasIndex(x => new { x.UserId, x.IsDeleted, x.CreatedAtUtc });
+        callHistory.HasIndex(x => x.DeletedAtUtc);
 
         var callSession = modelBuilder.Entity<CallSession>();
         callSession.ToTable("call_sessions");

@@ -141,6 +141,58 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
     }
 
     [Fact]
+    public async Task AutoDeleteSetting_ShouldDefaultToOneHourAndAllowStringAndNumericUpdates()
+    {
+        using var client = factory.CreateClient();
+        var user = await RegisterUserAsync(client, "AutoDeleteUser");
+
+        var defaultSetting = await client.GetAsync($"/api/users/{user.UserId}/auto-delete-setting");
+        defaultSetting.AssertStatus(HttpStatusCode.OK);
+        var defaultBody = await defaultSetting.ReadRequiredAsync<AutoDeleteCallHistorySettingResponse>();
+        Assert.Equal("OneHour", defaultBody.AutoDeleteMode);
+
+        var updateToNever = await client.PostAsJsonAsync("/api/users/auto-delete-setting", new
+        {
+            userId = user.UserId,
+            mode = "Never"
+        });
+        updateToNever.AssertStatus(HttpStatusCode.OK);
+        var neverBody = await updateToNever.ReadRequiredAsync<UpdateAutoDeleteCallHistorySettingResponse>();
+        Assert.True(neverBody.Success);
+        Assert.Equal("Never", neverBody.AutoDeleteMode);
+
+        var updateToSixHours = await client.PostAsJsonAsync("/api/users/auto-delete-setting", new
+        {
+            userId = user.UserId,
+            mode = 2
+        });
+        updateToSixHours.AssertStatus(HttpStatusCode.OK);
+        var sixHoursBody = await updateToSixHours.ReadRequiredAsync<UpdateAutoDeleteCallHistorySettingResponse>();
+        Assert.Equal("SixHours", sixHoursBody.AutoDeleteMode);
+    }
+
+    [Fact]
+    public async Task AutoDeleteSetting_ShouldRejectInvalidModeAndMissingUser()
+    {
+        using var client = factory.CreateClient();
+        var user = await RegisterUserAsync(client, "InvalidAutoDeleteUser");
+
+        var invalid = await client.PostAsJsonAsync("/api/users/auto-delete-setting", new
+        {
+            userId = user.UserId,
+            mode = "Tomorrowish"
+        });
+        invalid.AssertStatus(HttpStatusCode.BadRequest);
+
+        var missing = await client.PostAsJsonAsync("/api/users/auto-delete-setting", new
+        {
+            userId = Guid.NewGuid(),
+            mode = "OneHour"
+        });
+        missing.AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Invite_CreateRedeem_ShouldAddMutualContactsAndRejectReuse()
     {
         using var client = factory.CreateClient();
