@@ -24,6 +24,19 @@ public static class UserEndpoints
             .WithSummary("Find user by invite code")
             .RequireRateLimiting("public-per-ip");
 
+        users.MapPost("/auto-delete-setting", UpdateAutoDeleteSettingAsync)
+            .WithName("UpdateAutoDeleteCallHistorySetting")
+            .WithSummary("Update a user's call history auto-delete setting")
+            .Produces<UpdateAutoDeleteCallHistorySettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapGet("/{userId:guid}/auto-delete-setting", GetAutoDeleteSettingAsync)
+            .WithName("GetAutoDeleteCallHistorySetting")
+            .WithSummary("Get a user's call history auto-delete setting")
+            .Produces<AutoDeleteCallHistorySettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         users.MapPut("/{userId:guid}/push-tokens", RegisterPushTokenAsync)
             .WithName("RegisterPushToken")
             .WithSummary("Register or refresh an FCM push token for a user")
@@ -142,6 +155,76 @@ public static class UserEndpoints
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException?.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) == true
            || ex.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<IResult> UpdateAutoDeleteSettingAsync(
+        [FromBody] UpdateAutoDeleteCallHistorySettingRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (!TryReadAutoDeleteMode(request.Mode, out var mode))
+        {
+            return InvalidAutoDeleteMode();
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == request.UserId, ct);
+        if (user is null)
+        {
+            return UserNotFound(request.UserId);
+        }
+
+        user.AutoDeleteCallHistoryMode = mode;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new UpdateAutoDeleteCallHistorySettingResponse(true, user.AutoDeleteCallHistoryMode.ToString()));
+    }
+
+    private static async Task<IResult> GetAutoDeleteSettingAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var mode = await db.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => (AutoDeleteCallHistoryMode?)x.AutoDeleteCallHistoryMode)
+            .FirstOrDefaultAsync(ct);
+
+        return mode is null
+            ? UserNotFound(userId)
+            : Results.Ok(new AutoDeleteCallHistorySettingResponse(mode.Value.ToString()));
+    }
+
+    private static bool TryReadAutoDeleteMode(string? value, out AutoDeleteCallHistoryMode mode)
+    {
+        mode = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        return int.TryParse(normalized, out var numericMode)
+            ? TryValidateAutoDeleteMode(numericMode, out mode)
+            : Enum.TryParse(normalized, ignoreCase: true, out mode) && Enum.IsDefined(mode);
+    }
+
+    private static bool TryValidateAutoDeleteMode(int value, out AutoDeleteCallHistoryMode mode)
+    {
+        mode = (AutoDeleteCallHistoryMode)value;
+        return Enum.IsDefined(mode);
+    }
+
+    private static IResult InvalidAutoDeleteMode()
+        => Results.Problem(
+            title: "Invalid auto-delete mode",
+            statusCode: StatusCodes.Status400BadRequest);
+
+    private static IResult UserNotFound(Guid userId)
+        => Results.Problem(
+            title: "User not found",
+            detail: $"User '{userId}' does not exist.",
+            statusCode: StatusCodes.Status404NotFound,
+            type: "user_not_found");
 
     private static async Task<IResult> RegisterPushTokenAsync(
         Guid userId,
