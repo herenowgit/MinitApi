@@ -208,6 +208,7 @@ api.MapUsageEndpoints();
 api.MapAdminEndpoints();
 api.MapTurnEndpoints();
 api.MapInviteEndpoints();
+api.MapMessageEndpoints();
 
 app.Run();
 
