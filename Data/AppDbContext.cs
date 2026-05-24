@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<UsageAdjustment> UsageAdjustments => Set<UsageAdjustment>();
     public DbSet<PushToken> PushTokens => Set<PushToken>();
     public DbSet<OneTimeInviteCode> OneTimeInviteCodes => Set<OneTimeInviteCode>();
+    public DbSet<Message> Messages => Set<Message>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -132,6 +133,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .OnDelete(DeleteBehavior.Restrict);
         oneTimeInviteCode.HasIndex(x => x.TokenHash).IsUnique();
         oneTimeInviteCode.HasIndex(x => new { x.OwnerUserId, x.ExpiresAtUtc });
+
+        var message = modelBuilder.Entity<Message>();
+        message.ToTable("messages");
+        message.HasKey(x => x.Id);
+        message.Property(x => x.Content).IsRequired().HasMaxLength(1000);
+        message.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
+        message.Property(x => x.IsDeleted).HasDefaultValue(false);
+        message.Property(x => x.DeletedAtUtc).HasColumnType("timestamp with time zone");
+        message.HasOne(x => x.SenderUser)
+            .WithMany(x => x.SentMessages)
+            .HasForeignKey(x => x.SenderUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        message.HasOne(x => x.ReceiverUser)
+            .WithMany(x => x.ReceivedMessages)
+            .HasForeignKey(x => x.ReceiverUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        message.HasIndex(x => new { x.SenderUserId, x.ReceiverUserId, x.CreatedAtUtc });
+        message.HasIndex(x => new { x.ReceiverUserId, x.CreatedAtUtc });
 
         var usageAdjustment = modelBuilder.Entity<UsageAdjustment>();
         usageAdjustment.ToTable("usage_adjustments");
