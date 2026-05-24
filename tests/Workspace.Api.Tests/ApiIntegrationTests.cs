@@ -5,6 +5,7 @@ using Workspace.Dtos.Admin;
 using Workspace.Dtos.Calls;
 using Workspace.Dtos.Contacts;
 using Workspace.Dtos.Invites;
+using Workspace.Dtos.Messages;
 using Workspace.Dtos.Usage;
 using AdminUsageAdjustmentRequest = Workspace.Dtos.Admin.UsageAdjustmentRequest;
 using Workspace.Dtos.Users;
@@ -281,6 +282,50 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
             InviteCode = created.InviteCode
         });
         redeem.AssertStatus(HttpStatusCode.Gone);
+    }
+
+    [Fact]
+    public async Task Messages_SendConversationAndRecentConversations_ShouldSucceed()
+    {
+        using var client = factory.CreateClient();
+
+        var userA = await RegisterUserAsync(client, "MessageAlice");
+        var userB = await RegisterUserAsync(client, "MessageBob");
+
+        var first = await client.PostAsJsonAsync("/api/messages/send", new SendMessageRequest
+        {
+            SenderUserId = userA.UserId,
+            ReceiverUserId = userB.UserId,
+            Content = "Hello Bob"
+        });
+        first.AssertStatus(HttpStatusCode.Created);
+        var firstBody = await first.ReadRequiredAsync<MessageResponse>();
+        Assert.Equal(userA.UserId, firstBody.SenderUserId);
+        Assert.Equal(userB.UserId, firstBody.ReceiverUserId);
+        Assert.Equal("Hello Bob", firstBody.Content);
+
+        var second = await client.PostAsJsonAsync("/api/messages/send", new SendMessageRequest
+        {
+            SenderUserId = userB.UserId,
+            ReceiverUserId = userA.UserId,
+            Content = "Hi Alice"
+        });
+        second.AssertStatus(HttpStatusCode.Created);
+        var secondBody = await second.ReadRequiredAsync<MessageResponse>();
+
+        var conversation = await client.GetAsync($"/api/messages/conversation?userId={userA.UserId}&otherUserId={userB.UserId}&page=1&pageSize=50");
+        conversation.AssertStatus(HttpStatusCode.OK);
+        var conversationBody = await conversation.ReadRequiredAsync<List<MessageResponse>>();
+        Assert.Equal(2, conversationBody.Count);
+        Assert.Equal(secondBody.Id, conversationBody[0].Id);
+        Assert.Equal(firstBody.Id, conversationBody[1].Id);
+
+        var recent = await client.GetAsync($"/api/messages/conversations/{userA.UserId}");
+        recent.AssertStatus(HttpStatusCode.OK);
+        var recentBody = await recent.ReadRequiredAsync<List<RecentConversationResponse>>();
+        var recentConversation = Assert.Single(recentBody);
+        Assert.Equal(userB.UserId, recentConversation.OtherUserId);
+        Assert.Equal(secondBody.Id, recentConversation.LastMessage.Id);
     }
 
     private static async Task<RegisterUserResponse> RegisterUserAsync(HttpClient client, string displayName)

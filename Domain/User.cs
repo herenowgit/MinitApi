@@ -18,4 +18,6 @@ public sealed class User
     public ICollection<UsageAdjustment> UsageAdjustments { get; set; } = new List<UsageAdjustment>();
     public ICollection<PushToken> PushTokens { get; set; } = new List<PushToken>();
     public ICollection<OneTimeInviteCode> OneTimeInviteCodes { get; set; } = new List<OneTimeInviteCode>();
+    public ICollection<Message> SentMessages { get; set; } = new List<Message>();
+    public ICollection<Message> ReceivedMessages { get; set; } = new List<Message>();
 }
