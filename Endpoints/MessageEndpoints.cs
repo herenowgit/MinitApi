@@ -8,7 +8,9 @@ namespace Workspace.Endpoints;
 
 public static class MessageEndpoints
 {
-    private const int MaxContentLength = 1000;
+    private const int MaxEncryptedMessageLength = 4000;
+    private const int MaxEncryptedKeyLength = 1024;
+    private const int MaxIvLength = 32;
     private const int DefaultPageSize = 50;
     private const int MaxPageSize = 100;
 
@@ -77,7 +79,10 @@ public static class MessageEndpoints
             Id = Guid.NewGuid(),
             SenderUserId = request.SenderUserId,
             ReceiverUserId = request.ReceiverUserId,
-            Content = request.Content.Trim(),
+            EncryptedMessage = request.EncryptedMessage,
+            EncryptedKey = request.EncryptedKey,
+            EncryptedKeyForSender = request.EncryptedKeyForSender,
+            Iv = request.Iv,
             CreatedAtUtc = DateTimeOffset.UtcNow,
             IsDeleted = false
         };
@@ -160,7 +165,10 @@ public static class MessageEndpoints
                     x.Id,
                     x.SenderUserId,
                     x.ReceiverUserId,
-                    x.Content,
+                    x.EncryptedMessage,
+                    x.EncryptedKey,
+                    x.EncryptedKeyForSender,
+                    x.Iv,
                     x.CreatedAtUtc))
                 .ToListAsync(ct);
 
@@ -272,17 +280,30 @@ public static class MessageEndpoints
             errors["receiverUserId"] = ["senderUserId and receiverUserId must be different users."];
         }
 
-        var content = request.Content?.Trim() ?? string.Empty;
-        if (content.Length == 0)
-        {
-            errors["content"] = ["Content must not be empty."];
-        }
-        else if (content.Length > MaxContentLength)
-        {
-            errors["content"] = [$"Content must be {MaxContentLength} characters or fewer."];
-        }
+        // The server never reads message content — it only enforces that the
+        // E2EE ciphertext fields are present and within sane size bounds.
+        ValidateCiphertextField(errors, "encryptedMessage", request.EncryptedMessage, MaxEncryptedMessageLength);
+        ValidateCiphertextField(errors, "encryptedKey", request.EncryptedKey, MaxEncryptedKeyLength);
+        ValidateCiphertextField(errors, "encryptedKeyForSender", request.EncryptedKeyForSender, MaxEncryptedKeyLength);
+        ValidateCiphertextField(errors, "iv", request.Iv, MaxIvLength);
 
         return errors;
+    }
+
+    private static void ValidateCiphertextField(
+        Dictionary<string, string[]> errors,
+        string field,
+        string value,
+        int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errors[field] = [$"{field} must not be empty."];
+        }
+        else if (value.Length > maxLength)
+        {
+            errors[field] = [$"{field} must be {maxLength} characters or fewer."];
+        }
     }
 
     private static MessageResponse ToResponse(Message message)
@@ -290,7 +311,10 @@ public static class MessageEndpoints
             message.Id,
             message.SenderUserId,
             message.ReceiverUserId,
-            message.Content,
+            message.EncryptedMessage,
+            message.EncryptedKey,
+            message.EncryptedKeyForSender,
+            message.Iv,
             message.CreatedAtUtc);
 
     private static bool IsSqlite(AppDbContext db)

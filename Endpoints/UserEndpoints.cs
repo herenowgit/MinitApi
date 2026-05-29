@@ -24,6 +24,21 @@ public static class UserEndpoints
             .WithSummary("Find user by invite code")
             .RequireRateLimiting("public-per-ip");
 
+        users.MapPut("/{userId:guid}/public-key", UploadPublicKeyAsync)
+            .WithName("UploadPublicKey")
+            .WithSummary("Upload or refresh the user's E2EE public key")
+            .Produces<PublicKeyResponse>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("public-per-ip");
+
+        users.MapGet("/{userId:guid}/public-key", GetPublicKeyAsync)
+            .WithName("GetPublicKey")
+            .WithSummary("Get another user's E2EE public key for message encryption")
+            .Produces<PublicKeyResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("public-per-ip");
+
         users.MapPost("/auto-delete-setting", UpdateAutoDeleteSettingAsync)
             .WithName("UpdateAutoDeleteCallHistorySetting")
             .WithSummary("Update a user's call history auto-delete setting")
@@ -150,6 +165,62 @@ public static class UserEndpoints
                 statusCode: StatusCodes.Status404NotFound,
                 type: "user_not_found")
             : Results.Ok(user);
+    }
+
+    private static async Task<IResult> UploadPublicKeyAsync(
+        Guid userId,
+        [FromBody] UploadPublicKeyRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var key = request.PublicKey?.Trim() ?? string.Empty;
+
+        // Validate as plausible Base64 of a bounded size. The server never
+        // interprets the key material — it only relays it to other clients.
+        if (key.Length is < 100 or > 1024 || !IsBase64(key))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["publicKey"] = ["A valid Base64-encoded public key is required."]
+            });
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == userId && x.IsActive, ct);
+        if (user is null)
+        {
+            return UserNotFound(userId);
+        }
+
+        user.PublicKey = key;
+        user.PublicKeyUpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new PublicKeyResponse(user.Id, user.PublicKey));
+    }
+
+    private static async Task<IResult> GetPublicKeyAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var result = await db.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId && x.IsActive)
+            .Select(x => new { x.Id, x.PublicKey })
+            .FirstOrDefaultAsync(ct);
+
+        if (result is null)
+        {
+            return UserNotFound(userId);
+        }
+
+        return Results.Ok(new PublicKeyResponse(result.Id, result.PublicKey));
+    }
+
+    private static bool IsBase64(string value)
+    {
+        Span<byte> buffer = new byte[((value.Length * 3) + 3) / 4];
+        return Convert.TryFromBase64String(value, buffer, out _);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex)

@@ -30,6 +30,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasDefaultValue(AutoDeleteCallHistoryMode.OneHour);
         user.Property(x => x.IsActive).HasDefaultValue(true);
         user.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
+        user.Property(x => x.PublicKey).HasMaxLength(1024);
+        user.Property(x => x.PublicKeyUpdatedAt).HasColumnType("timestamp with time zone");
         user.HasIndex(x => x.Code).IsUnique();
 
         var contact = modelBuilder.Entity<Contact>();
@@ -137,7 +139,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         var message = modelBuilder.Entity<Message>();
         message.ToTable("messages");
         message.HasKey(x => x.Id);
-        message.Property(x => x.Content).IsRequired().HasMaxLength(1000);
+        message.Property(x => x.EncryptedMessage).IsRequired().HasMaxLength(4000).HasDefaultValue(string.Empty);
+        message.Property(x => x.EncryptedKey).IsRequired().HasMaxLength(1024).HasDefaultValue(string.Empty);
+        message.Property(x => x.EncryptedKeyForSender).IsRequired().HasMaxLength(1024).HasDefaultValue(string.Empty);
+        message.Property(x => x.Iv).IsRequired().HasMaxLength(32).HasDefaultValue(string.Empty);
         message.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
         message.Property(x => x.IsDeleted).HasDefaultValue(false);
         message.Property(x => x.DeletedAtUtc).HasColumnType("timestamp with time zone");

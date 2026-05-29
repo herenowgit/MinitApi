@@ -27,6 +27,10 @@ public sealed class UserByCodeResponse
     public string DisplayName { get; init; } = string.Empty;
 }
 
+public sealed record UploadPublicKeyRequest(string PublicKey);
+
+public sealed record PublicKeyResponse(Guid UserId, string? PublicKey);
+
 public sealed class UpdateAutoDeleteCallHistorySettingRequest
 {
     public Guid UserId { get; init; }
