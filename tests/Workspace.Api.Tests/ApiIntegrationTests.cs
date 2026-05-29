@@ -296,19 +296,26 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
         {
             SenderUserId = userA.UserId,
             ReceiverUserId = userB.UserId,
-            Content = "Hello Bob"
+            EncryptedMessage = "ZW5jcnlwdGVkLW1lc3NhZ2UtMQ==",
+            EncryptedKey = "d2NmFwcGVkLWtleS1mb3ItYm9i",
+            EncryptedKeyForSender = "d3JhcHBlZC1rZXktZm9yLWFsaWNl",
+            Iv = "aXYtb25lLTEyYg=="
         });
         first.AssertStatus(HttpStatusCode.Created);
         var firstBody = await first.ReadRequiredAsync<MessageResponse>();
         Assert.Equal(userA.UserId, firstBody.SenderUserId);
         Assert.Equal(userB.UserId, firstBody.ReceiverUserId);
-        Assert.Equal("Hello Bob", firstBody.Content);
+        Assert.Equal("ZW5jcnlwdGVkLW1lc3NhZ2UtMQ==", firstBody.EncryptedMessage);
+        Assert.Equal("aXYtb25lLTEyYg==", firstBody.Iv);
 
         var second = await client.PostAsJsonAsync("/api/messages/send", new SendMessageRequest
         {
             SenderUserId = userB.UserId,
             ReceiverUserId = userA.UserId,
-            Content = "Hi Alice"
+            EncryptedMessage = "ZW5jcnlwdGVkLW1lc3NhZ2UtMg==",
+            EncryptedKey = "d3JhcHBlZC1rZXktZm9yLWFsaWNlLTI=",
+            EncryptedKeyForSender = "d3JhcHBlZC1rZXktZm9yLWJvYi0y",
+            Iv = "aXYtdHdvLTEyYnl0"
         });
         second.AssertStatus(HttpStatusCode.Created);
         var secondBody = await second.ReadRequiredAsync<MessageResponse>();

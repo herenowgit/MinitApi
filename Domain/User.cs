@@ -10,6 +10,11 @@ public sealed class User
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 
+    // E2EE: Base64 SPKI/X.509 RSA public key uploaded by the device.
+    // Private key never leaves the device; the server only relays this public key.
+    public string? PublicKey { get; set; }
+    public DateTime? PublicKeyUpdatedAt { get; set; }
+
     public ICollection<Contact> OwnedContacts { get; set; } = new List<Contact>();
     public ICollection<Contact> ContactOfUsers { get; set; } = new List<Contact>();
     public ICollection<CallHistory> CallHistory { get; set; } = new List<CallHistory>();
