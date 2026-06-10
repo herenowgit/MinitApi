@@ -7,6 +7,7 @@ public sealed class User
     public string Code { get; set; } = string.Empty;
     public int MonthlyLimitSeconds { get; set; } = 6000;
     public AutoDeleteCallHistoryMode AutoDeleteCallHistoryMode { get; set; } = AutoDeleteCallHistoryMode.OneHour;
+    public AutoDeleteMessageMode AutoDeleteMessageMode { get; set; } = AutoDeleteMessageMode.OneHour;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 

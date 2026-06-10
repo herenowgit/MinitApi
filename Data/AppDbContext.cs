@@ -28,6 +28,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasConversion<int>()
             .HasSentinel((AutoDeleteCallHistoryMode)0)
             .HasDefaultValue(AutoDeleteCallHistoryMode.OneHour);
+        user.Property(x => x.AutoDeleteMessageMode)
+            .HasConversion<int>()
+            .HasSentinel((AutoDeleteMessageMode)0)
+            .HasDefaultValue(AutoDeleteMessageMode.OneHour);
         user.Property(x => x.IsActive).HasDefaultValue(true);
         user.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
         user.Property(x => x.PublicKey).HasMaxLength(1024);
