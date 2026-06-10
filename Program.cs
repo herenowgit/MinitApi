@@ -211,7 +211,6 @@ api.MapAdminEndpoints();
 api.MapTurnEndpoints();
 api.MapInviteEndpoints();
 api.MapMessageEndpoints();
-api.MapMessageEndpoints();
 
 app.Run();
 
