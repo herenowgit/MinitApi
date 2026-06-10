@@ -63,6 +63,8 @@ builder.Services.AddHttpClient(TurnService.HttpClientName, client =>
 builder.Services.AddScoped<ITurnService, TurnService>();
 
 builder.Services.AddHostedService<CallTimeoutService>();
+builder.Services.AddHostedService<CallHistoryCleanupWorker>();
+builder.Services.AddHostedService<MessageCleanupWorker>();
 
 // Firebase Admin — required for FCM push to callee devices.
 // Credential is read from env var FIREBASE_SERVICE_ACCOUNT_JSON (Railway-friendly).
@@ -208,6 +210,8 @@ api.MapUsageEndpoints();
 api.MapAdminEndpoints();
 api.MapTurnEndpoints();
 api.MapInviteEndpoints();
+api.MapMessageEndpoints();
+api.MapMessageEndpoints();
 
 app.Run();
 
