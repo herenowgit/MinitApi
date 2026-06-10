@@ -52,6 +52,19 @@ public static class UserEndpoints
             .Produces<AutoDeleteCallHistorySettingResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        users.MapPost("/auto-delete-message-setting", UpdateAutoDeleteMessageSettingAsync)
+            .WithName("UpdateAutoDeleteMessageSetting")
+            .WithSummary("Update a user's message auto-delete setting")
+            .Produces<UpdateAutoDeleteMessageSettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapGet("/{userId:guid}/auto-delete-message-setting", GetAutoDeleteMessageSettingAsync)
+            .WithName("GetAutoDeleteMessageSetting")
+            .WithSummary("Get a user's message auto-delete setting")
+            .Produces<AutoDeleteMessageSettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         users.MapPut("/{userId:guid}/push-tokens", RegisterPushTokenAsync)
             .WithName("RegisterPushToken")
             .WithSummary("Register or refresh an FCM push token for a user")
@@ -282,6 +295,64 @@ public static class UserEndpoints
     private static bool TryValidateAutoDeleteMode(int value, out AutoDeleteCallHistoryMode mode)
     {
         mode = (AutoDeleteCallHistoryMode)value;
+        return Enum.IsDefined(mode);
+    }
+
+    private static async Task<IResult> UpdateAutoDeleteMessageSettingAsync(
+        [FromBody] UpdateAutoDeleteMessageSettingRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (!TryReadAutoDeleteMessageMode(request.Mode, out var mode))
+        {
+            return InvalidAutoDeleteMode();
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == request.UserId, ct);
+        if (user is null)
+        {
+            return UserNotFound(request.UserId);
+        }
+
+        user.AutoDeleteMessageMode = mode;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new UpdateAutoDeleteMessageSettingResponse(true, user.AutoDeleteMessageMode.ToString()));
+    }
+
+    private static async Task<IResult> GetAutoDeleteMessageSettingAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var mode = await db.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => (AutoDeleteMessageMode?)x.AutoDeleteMessageMode)
+            .FirstOrDefaultAsync(ct);
+
+        return mode is null
+            ? UserNotFound(userId)
+            : Results.Ok(new AutoDeleteMessageSettingResponse(mode.Value.ToString()));
+    }
+
+    private static bool TryReadAutoDeleteMessageMode(string? value, out AutoDeleteMessageMode mode)
+    {
+        mode = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        return int.TryParse(normalized, out var numericMode)
+            ? TryValidateAutoDeleteMessageMode(numericMode, out mode)
+            : Enum.TryParse(normalized, ignoreCase: true, out mode) && Enum.IsDefined(mode);
+    }
+
+    private static bool TryValidateAutoDeleteMessageMode(int value, out AutoDeleteMessageMode mode)
+    {
+        mode = (AutoDeleteMessageMode)value;
         return Enum.IsDefined(mode);
     }
 
