@@ -25,3 +25,18 @@ public sealed record MessageResponse(
 public sealed record RecentConversationResponse(
     Guid OtherUserId,
     MessageResponse LastMessage);
+
+public enum DeleteChatMode
+{
+    DeleteMine = 1,
+    DeleteAll = 2
+}
+
+public sealed class DeleteChatRequest
+{
+    public Guid UserId { get; set; }
+    public Guid OtherUserId { get; set; }
+    public string Mode { get; set; } = string.Empty;
+}
+
+public sealed record DeleteChatResponse(int DeletedCount, string Mode);

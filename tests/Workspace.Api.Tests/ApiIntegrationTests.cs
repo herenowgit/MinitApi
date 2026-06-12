@@ -335,6 +335,74 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
         Assert.Equal(secondBody.Id, recentConversation.LastMessage.Id);
     }
 
+    [Fact]
+    public async Task Messages_DeleteChat_ShouldScopeToConversationAndMode()
+    {
+        using var client = factory.CreateClient();
+
+        var alice = await RegisterUserAsync(client, "DeleteAlice");
+        var bob = await RegisterUserAsync(client, "DeleteBob");
+        var carol = await RegisterUserAsync(client, "DeleteCarol");
+
+        // Alice→Bob, Bob→Alice, and an unrelated Alice→Carol message that must survive.
+        await SendEncryptedAsync(client, alice.UserId, bob.UserId);
+        await SendEncryptedAsync(client, bob.UserId, alice.UserId);
+        await SendEncryptedAsync(client, alice.UserId, carol.UserId);
+
+        // DeleteMine: removes only Alice's messages to Bob; Bob→Alice remains.
+        var deleteMine = await client.PostAsJsonAsync("/api/messages/delete-chat", new DeleteChatRequest
+        {
+            UserId = alice.UserId,
+            OtherUserId = bob.UserId,
+            Mode = "DeleteMine"
+        });
+        deleteMine.AssertStatus(HttpStatusCode.OK);
+        var deleteMineBody = await deleteMine.ReadRequiredAsync<DeleteChatResponse>();
+        Assert.Equal(1, deleteMineBody.DeletedCount);
+
+        var afterMine = await client.GetAsync($"/api/messages/conversation?userId={alice.UserId}&otherUserId={bob.UserId}");
+        afterMine.AssertStatus(HttpStatusCode.OK);
+        var afterMineBody = await afterMine.ReadRequiredAsync<List<MessageResponse>>();
+        var remaining = Assert.Single(afterMineBody);
+        Assert.Equal(bob.UserId, remaining.SenderUserId);
+
+        // DeleteAll: removes the remaining Bob→Alice message too.
+        var deleteAll = await client.PostAsJsonAsync("/api/messages/delete-chat", new DeleteChatRequest
+        {
+            UserId = alice.UserId,
+            OtherUserId = bob.UserId,
+            Mode = "DeleteAll"
+        });
+        deleteAll.AssertStatus(HttpStatusCode.OK);
+        var deleteAllBody = await deleteAll.ReadRequiredAsync<DeleteChatResponse>();
+        Assert.Equal(1, deleteAllBody.DeletedCount);
+
+        var afterAll = await client.GetAsync($"/api/messages/conversation?userId={alice.UserId}&otherUserId={bob.UserId}");
+        afterAll.AssertStatus(HttpStatusCode.OK);
+        var afterAllBody = await afterAll.ReadRequiredAsync<List<MessageResponse>>();
+        Assert.Empty(afterAllBody);
+
+        // The unrelated Alice→Carol conversation is untouched.
+        var carolConversation = await client.GetAsync($"/api/messages/conversation?userId={alice.UserId}&otherUserId={carol.UserId}");
+        carolConversation.AssertStatus(HttpStatusCode.OK);
+        var carolBody = await carolConversation.ReadRequiredAsync<List<MessageResponse>>();
+        Assert.Single(carolBody);
+    }
+
+    private static async Task SendEncryptedAsync(HttpClient client, Guid senderUserId, Guid receiverUserId)
+    {
+        var response = await client.PostAsJsonAsync("/api/messages/send", new SendMessageRequest
+        {
+            SenderUserId = senderUserId,
+            ReceiverUserId = receiverUserId,
+            EncryptedMessage = "ZW5jcnlwdGVkLW1lc3NhZ2U=",
+            EncryptedKey = "d3JhcHBlZC1rZXktcmVjZWl2ZXI=",
+            EncryptedKeyForSender = "d3JhcHBlZC1rZXktc2VuZGVy",
+            Iv = "aXYtMTJieXRlcw=="
+        });
+        response.AssertStatus(HttpStatusCode.Created);
+    }
+
     private static async Task<RegisterUserResponse> RegisterUserAsync(HttpClient client, string displayName)
     {
         var response = await client.PostAsJsonAsync("/api/users/register", new RegisterUserRequest
