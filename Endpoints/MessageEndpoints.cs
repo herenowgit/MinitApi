@@ -42,6 +42,14 @@ public static class MessageEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .RequireRateLimiting("public-per-ip");
 
+        group.MapPost("/delete-chat", DeleteChatAsync)
+            .WithName("DeleteChat")
+            .WithSummary("Hard-delete messages in a conversation (mine or all)")
+            .Produces<DeleteChatResponse>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("public-per-ip");
+
         return group;
     }
 
@@ -259,6 +267,86 @@ public static class MessageEndpoints
             .ToList();
 
         return Results.Ok(conversations);
+    }
+
+    private static async Task<IResult> DeleteChatAsync(
+        [FromBody] DeleteChatRequest request,
+        AppDbContext db,
+        ILogger<Program> logger,
+        CancellationToken ct)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (request.UserId == Guid.Empty)
+        {
+            errors["userId"] = ["userId is required."];
+        }
+
+        if (request.OtherUserId == Guid.Empty)
+        {
+            errors["otherUserId"] = ["otherUserId is required."];
+        }
+
+        if (request.UserId != Guid.Empty && request.UserId == request.OtherUserId)
+        {
+            errors["otherUserId"] = ["userId and otherUserId must be different users."];
+        }
+
+        if (!Enum.TryParse<DeleteChatMode>(request.Mode?.Trim(), ignoreCase: true, out var mode)
+            || !Enum.IsDefined(mode))
+        {
+            errors["mode"] = ["mode must be 'DeleteMine' or 'DeleteAll'."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var users = await db.Users
+            .AsNoTracking()
+            .Where(x => x.Id == request.UserId || x.Id == request.OtherUserId)
+            .Select(x => new { x.Id, x.IsActive })
+            .ToListAsync(ct);
+
+        if (!users.Any(x => x.Id == request.UserId && x.IsActive))
+        {
+            return UserNotFound("User not found", request.UserId);
+        }
+
+        if (!users.Any(x => x.Id == request.OtherUserId && x.IsActive))
+        {
+            return UserNotFound("Other user not found", request.OtherUserId);
+        }
+
+        // Deletion is always scoped to the two-user conversation, so a caller can
+        // never remove messages outside it. ExecuteDeleteAsync issues a single
+        // batched SQL DELETE (no rows loaded into memory) served by the existing
+        // (SenderUserId, ReceiverUserId, CreatedAtUtc) index.
+        int deleted;
+        if (mode == DeleteChatMode.DeleteMine)
+        {
+            // "My messages in this conversation" are exactly those I sent to the
+            // other user — sender = me AND receiver = them.
+            deleted = await db.Messages
+                .Where(x => x.SenderUserId == request.UserId && x.ReceiverUserId == request.OtherUserId)
+                .ExecuteDeleteAsync(ct);
+        }
+        else
+        {
+            deleted = await db.Messages
+                .Where(x =>
+                    (x.SenderUserId == request.UserId && x.ReceiverUserId == request.OtherUserId)
+                    || (x.SenderUserId == request.OtherUserId && x.ReceiverUserId == request.UserId))
+                .ExecuteDeleteAsync(ct);
+        }
+
+        // Audit trail — identifiers and counts only, never message content.
+        logger.LogInformation(
+            "DeleteChat: user {UserId} deleted {Count} messages with {OtherUserId} (mode {Mode})",
+            request.UserId, deleted, request.OtherUserId, mode);
+
+        return Results.Ok(new DeleteChatResponse(deleted, mode.ToString()));
     }
 
     private static Dictionary<string, string[]> ValidateSendRequest(SendMessageRequest request)
