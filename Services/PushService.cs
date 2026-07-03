@@ -11,6 +11,10 @@ public sealed class PushService(
     // FCM TTL for an incoming-call push: just past the typical "ring duration".
     private static readonly TimeSpan IncomingCallTtl = TimeSpan.FromSeconds(45);
 
+    // Message pushes survive longer so a notification still arrives after the
+    // device comes back online, but not so long that stale messages surprise the user.
+    private static readonly TimeSpan NewMessageTtl = TimeSpan.FromHours(24);
+
     /// <summary>
     /// Sends a high-priority data-only FCM message to all of the callee's registered tokens.
     /// Stale tokens are pruned automatically when FCM reports them as unregistered.
@@ -76,6 +80,83 @@ public sealed class PushService(
         catch (Exception ex)
         {
             logger.LogError(ex, "PushService: failed to send incoming-call push for call {CallId}", callId);
+        }
+    }
+
+    /// <summary>
+    /// Sends a high-priority, data-only FCM push to all of the receiver's tokens for a new
+    /// message. The payload carries the sender's name and the E2EE ciphertext only — the
+    /// server never sees plaintext, so the client decrypts locally to build the preview.
+    /// Errors are swallowed: a failed push must not break the send-message endpoint.
+    /// </summary>
+    public async Task SendNewMessageAsync(
+        Guid receiverUserId,
+        Guid senderUserId,
+        string senderDisplayName,
+        Guid messageId,
+        string encryptedMessage,
+        string encryptedKeyForReceiver,
+        string iv,
+        CancellationToken ct = default)
+    {
+        if (FirebaseAdmin.FirebaseApp.DefaultInstance is null)
+        {
+            logger.LogWarning("PushService: FirebaseApp not initialised — skipping message push for {MessageId}", messageId);
+            return;
+        }
+
+        var tokens = await db.PushTokens
+            .AsNoTracking()
+            .Where(x => x.UserId == receiverUserId)
+            .Select(x => x.Token)
+            .ToListAsync(ct);
+
+        if (tokens.Count == 0)
+        {
+            logger.LogInformation("PushService: receiver {UserId} has no registered tokens; skipping message push", receiverUserId);
+            return;
+        }
+
+        var data = new Dictionary<string, string>
+        {
+            ["type"] = "new_message",
+            // conversationId doubles as the deep-link target: the other party is the sender.
+            ["conversationId"] = senderUserId.ToString(),
+            ["senderUserId"] = senderUserId.ToString(),
+            ["senderName"] = senderDisplayName ?? string.Empty,
+            ["messageId"] = messageId.ToString(),
+            // E2EE ciphertext for local decryption. No plaintext ever leaves the server.
+            ["encryptedMessage"] = encryptedMessage ?? string.Empty,
+            ["encryptedKey"] = encryptedKeyForReceiver ?? string.Empty,
+            ["iv"] = iv ?? string.Empty,
+            ["sentAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+        };
+
+        var message = new MulticastMessage
+        {
+            Tokens = tokens,
+            Data = data,
+            Android = new AndroidConfig
+            {
+                Priority = Priority.High,
+                TimeToLive = NewMessageTtl
+                // Data-only (no Notification block): guarantees onMessageReceived fires in the
+                // background so the client can decrypt and build the preview itself.
+            }
+        };
+
+        try
+        {
+            var response = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message, ct);
+            await PruneStaleTokensAsync(tokens, response, ct);
+
+            logger.LogInformation(
+                "PushService: message push {MessageId} -> receiver {UserId}: {Success} success / {Failure} failure",
+                messageId, receiverUserId, response.SuccessCount, response.FailureCount);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PushService: failed to send message push {MessageId}", messageId);
         }
     }
 
