@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet ef *)",
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet build workspace.csproj -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_DeleteChat_ShouldScopeToConversationAndMode\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_SendConversationAndRecentConversations_ShouldSucceed\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet build workspace.sln -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")"
+    ]
+  }
+}

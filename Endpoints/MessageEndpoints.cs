@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Workspace.Data;
 using Workspace.Domain;
 using Workspace.Dtos.Messages;
+using Workspace.Services;
 
 namespace Workspace.Endpoints;
 
@@ -56,6 +57,8 @@ public static class MessageEndpoints
     private static async Task<IResult> SendMessageAsync(
         [FromBody] SendMessageRequest request,
         AppDbContext db,
+        IServiceScopeFactory scopeFactory,
+        ILogger<Program> logger,
         CancellationToken ct)
     {
         var validationErrors = ValidateSendRequest(request);
@@ -67,11 +70,11 @@ public static class MessageEndpoints
         var users = await db.Users
             .AsNoTracking()
             .Where(x => x.Id == request.SenderUserId || x.Id == request.ReceiverUserId)
-            .Select(x => new { x.Id, x.IsActive })
+            .Select(x => new { x.Id, x.IsActive, x.DisplayName })
             .ToListAsync(ct);
 
-        var senderExists = users.Any(x => x.Id == request.SenderUserId && x.IsActive);
-        if (!senderExists)
+        var sender = users.FirstOrDefault(x => x.Id == request.SenderUserId && x.IsActive);
+        if (sender is null)
         {
             return UserNotFound("Sender not found", request.SenderUserId);
         }
@@ -98,10 +101,38 @@ public static class MessageEndpoints
         db.Messages.Add(message);
         await db.SaveChangesAsync(ct);
 
-        // Future real-time upgrade point: after persistence, publish the saved
-        // message through a dispatcher such as MessageDispatcher.Publish(message).
-        // Keeping the HTTP contract unchanged lets polling clients and later
-        // SignalR clients share the same send endpoint.
+        // Fire-and-forget the new-message push so the response isn't blocked by FCM.
+        // Uses its own DI scope because the request scope (and its AppDbContext) is
+        // disposed as soon as we return. The push carries only the sender's name and
+        // the E2EE ciphertext — never plaintext — so the client decrypts locally.
+        var receiverUserId = request.ReceiverUserId;
+        var senderUserId = sender.Id;
+        var senderDisplayName = sender.DisplayName;
+        var messageId = message.Id;
+        var encryptedMessage = message.EncryptedMessage;
+        var encryptedKey = message.EncryptedKey;
+        var iv = message.Iv;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var push = scope.ServiceProvider.GetRequiredService<PushService>();
+                await push.SendNewMessageAsync(
+                    receiverUserId: receiverUserId,
+                    senderUserId: senderUserId,
+                    senderDisplayName: senderDisplayName,
+                    messageId: messageId,
+                    encryptedMessage: encryptedMessage,
+                    encryptedKeyForReceiver: encryptedKey,
+                    iv: iv,
+                    ct: CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Background message push for message {MessageId} failed", messageId);
+            }
+        }, CancellationToken.None);
 
         var response = ToResponse(message);
         return Results.Created($"/api/messages/{message.Id}", response);
