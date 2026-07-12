@@ -61,6 +61,21 @@ public sealed record UpdateAutoDeleteMessageSettingResponse(
 public sealed record AutoDeleteMessageSettingResponse(
     string AutoDeleteMode);
 
+public sealed class UpdateAutoDeleteAccountSettingRequest
+{
+    public Guid UserId { get; init; }
+
+    [JsonConverter(typeof(AutoDeleteCallHistoryModeInputConverter))]
+    public string Mode { get; init; } = string.Empty;
+}
+
+public sealed record UpdateAutoDeleteAccountSettingResponse(
+    bool Success,
+    string AutoDeleteMode);
+
+public sealed record AutoDeleteAccountSettingResponse(
+    string AutoDeleteMode);
+
 public sealed class AutoDeleteCallHistoryModeInputConverter : JsonConverter<string>
 {
     public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

@@ -53,6 +53,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddScoped<PushService>();
 builder.Services.AddScoped<InviteService>();
+builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddSingleton<ICodeGenerator, CodeGenerator>();
 builder.Services.AddSingleton<SignalingRoomManager>();
 
@@ -65,6 +66,7 @@ builder.Services.AddScoped<ITurnService, TurnService>();
 builder.Services.AddHostedService<CallTimeoutService>();
 builder.Services.AddHostedService<CallHistoryCleanupWorker>();
 builder.Services.AddHostedService<MessageCleanupWorker>();
+builder.Services.AddHostedService<AccountInactivityCleanupWorker>();
 
 // Firebase Admin — required for FCM push to callee devices.
 // Credential is read from env var FIREBASE_SERVICE_ACCOUNT_JSON (Railway-friendly).
@@ -90,6 +92,13 @@ else if (string.IsNullOrWhiteSpace(firebaseCredentialJson))
     Console.WriteLine("[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — incoming-call pushes will be skipped");
 }
 
+// Under the Testing environment the whole suite shares one rate-limit partition
+// ("unknown-ip"), so real per-minute limits would throttle unrelated tests. Use
+// effectively-unbounded limits there; production keeps the real values.
+var isTestingEnv = builder.Environment.IsEnvironment("Testing");
+var publicPermitLimit = isTestingEnv ? int.MaxValue : 30;
+var invitePermitLimit = isTestingEnv ? int.MaxValue : 10;
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -112,7 +121,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown-ip",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 30,
+                PermitLimit = publicPermitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true
@@ -131,7 +140,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: partitionKey,
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
+                PermitLimit = invitePermitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true

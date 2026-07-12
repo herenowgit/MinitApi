@@ -101,6 +101,11 @@ public static class MessageEndpoints
         db.Messages.Add(message);
         await db.SaveChangesAsync(ct);
 
+        // Sending a message counts as activity — reset the sender's inactivity clock.
+        await db.Users
+            .Where(x => x.Id == request.SenderUserId)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.LastActivityAt, DateTime.UtcNow), ct);
+
         // Fire-and-forget the new-message push so the response isn't blocked by FCM.
         // Uses its own DI scope because the request scope (and its AppDbContext) is
         // disposed as soon as we return. The push carries only the sender's name and

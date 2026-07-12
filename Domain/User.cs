@@ -8,8 +8,16 @@ public sealed class User
     public int MonthlyLimitSeconds { get; set; } = 6000;
     public AutoDeleteCallHistoryMode AutoDeleteCallHistoryMode { get; set; } = AutoDeleteCallHistoryMode.OneHour;
     public AutoDeleteMessageMode AutoDeleteMessageMode { get; set; } = AutoDeleteMessageMode.OneHour;
+
+    // Auto-delete the whole account after this period of inactivity (default: never).
+    public AutoDeleteAccountMode AutoDeleteAccountMode { get; set; } = AutoDeleteAccountMode.Never;
+
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
+
+    // Last time the user did anything (register, heartbeat, message sent, call made).
+    // Drives the inactivity-based automatic account deletion.
+    public DateTime LastActivityAt { get; set; }
 
     // E2EE: Base64 SPKI/X.509 RSA public key uploaded by the device.
     // Private key never leaves the device; the server only relays this public key.

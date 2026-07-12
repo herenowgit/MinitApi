@@ -6,7 +6,11 @@
       "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_DeleteChat_ShouldScopeToConversationAndMode\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
       "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_SendConversationAndRecentConversations_ShouldSucceed\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
       "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet test --filter \"FullyQualifiedName~Messages_\" -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
-      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet build workspace.sln -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")"
+      "PowerShell(cd \"d:/MyProjects/Minit/MinitApi\"; dotnet build workspace.sln -nologo --consoleloggerparameters:ErrorsOnly; \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(\"---VALUES---\")",
+      "PowerShell(& \"C:\\\\Users\\\\rabbasi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--MyProjects-Minit-MinitApi\\\\162fc796-7ad4-467d-9ff2-3cae2bb446ff\\\\scratchpad\\\\gen_icons.ps1\")",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\MyProjects\\\\Minit\\\\MinitAppAndroid\\\\app\\\\src\\\\main\\\\res\\\\mipmap-mdpi\",\"d:\\\\MyProjects\\\\Minit\\\\MinitAppAndroid\\\\app\\\\src\\\\main\\\\res\\\\mipmap-hdpi\",\"d:\\\\MyProjects\\\\Minit\\\\MinitAppAndroid\\\\app\\\\src\\\\main\\\\res\\\\mipmap-xhdpi\",\"d:\\\\MyProjects\\\\Minit\\\\MinitAppAndroid\\\\app\\\\src\\\\main\\\\res\\\\mipmap-xxhdpi\",\"d:\\\\MyProjects\\\\Minit\\\\MinitAppAndroid\\\\app\\\\src\\\\main\\\\res\\\\mipmap-xxxhdpi\" -File | ForEach-Object { \"{0}\\\\{1}  {2}B\" -f $_.Directory.Name, $_.Name, $_.Length })",
+      "PowerShell(dotnet build workspace.sln -clp:ErrorsOnly 2>&1)"
     ]
   }
 }

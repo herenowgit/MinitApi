@@ -65,6 +65,33 @@ public static class UserEndpoints
             .Produces<AutoDeleteMessageSettingResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        users.MapPost("/auto-delete-account-setting", UpdateAutoDeleteAccountSettingAsync)
+            .WithName("UpdateAutoDeleteAccountSetting")
+            .WithSummary("Update a user's inactivity account auto-delete setting")
+            .Produces<UpdateAutoDeleteAccountSettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapGet("/{userId:guid}/auto-delete-account-setting", GetAutoDeleteAccountSettingAsync)
+            .WithName("GetAutoDeleteAccountSetting")
+            .WithSummary("Get a user's inactivity account auto-delete setting")
+            .Produces<AutoDeleteAccountSettingResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        users.MapPost("/{userId:guid}/heartbeat", HeartbeatAsync)
+            .WithName("UserHeartbeat")
+            .WithSummary("Record user activity; 404 signals the account no longer exists")
+            .Produces(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("public-per-ip");
+
+        users.MapDelete("/{userId:guid}", DeleteAccountAsync)
+            .WithName("DeleteAccount")
+            .WithSummary("Permanently delete the user account and all related data")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("public-per-ip");
+
         users.MapPut("/{userId:guid}/push-tokens", RegisterPushTokenAsync)
             .WithName("RegisterPushToken")
             .WithSummary("Register or refresh an FCM push token for a user")
@@ -98,13 +125,15 @@ public static class UserEndpoints
             });
         }
 
+        var nowUtc = DateTime.UtcNow;
         var user = new User
         {
             Id = Guid.NewGuid(),
             DisplayName = normalizedDisplayName,
-            MonthlyLimitSeconds = 6000,
+            MonthlyLimitSeconds = 18000,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = nowUtc,
+            LastActivityAt = nowUtc
         };
 
         const int maxAttempts = 8;
@@ -354,6 +383,88 @@ public static class UserEndpoints
     {
         mode = (AutoDeleteMessageMode)value;
         return Enum.IsDefined(mode);
+    }
+
+    private static async Task<IResult> UpdateAutoDeleteAccountSettingAsync(
+        [FromBody] UpdateAutoDeleteAccountSettingRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (!TryReadAutoDeleteAccountMode(request.Mode, out var mode))
+        {
+            return InvalidAutoDeleteMode();
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == request.UserId, ct);
+        if (user is null)
+        {
+            return UserNotFound(request.UserId);
+        }
+
+        user.AutoDeleteAccountMode = mode;
+        // Changing this setting is itself activity — reset the inactivity clock so
+        // the user isn't unexpectedly deleted right after choosing a short window.
+        user.LastActivityAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new UpdateAutoDeleteAccountSettingResponse(true, user.AutoDeleteAccountMode.ToString()));
+    }
+
+    private static async Task<IResult> GetAutoDeleteAccountSettingAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var mode = await db.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => (AutoDeleteAccountMode?)x.AutoDeleteAccountMode)
+            .FirstOrDefaultAsync(ct);
+
+        return mode is null
+            ? UserNotFound(userId)
+            : Results.Ok(new AutoDeleteAccountSettingResponse(mode.Value.ToString()));
+    }
+
+    private static bool TryReadAutoDeleteAccountMode(string? value, out AutoDeleteAccountMode mode)
+    {
+        mode = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        return int.TryParse(normalized, out var numericMode)
+            ? TryValidateAutoDeleteAccountMode(numericMode, out mode)
+            : Enum.TryParse(normalized, ignoreCase: true, out mode) && Enum.IsDefined(mode);
+    }
+
+    private static bool TryValidateAutoDeleteAccountMode(int value, out AutoDeleteAccountMode mode)
+    {
+        mode = (AutoDeleteAccountMode)value;
+        return Enum.IsDefined(mode);
+    }
+
+    private static async Task<IResult> HeartbeatAsync(
+        Guid userId,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var rows = await db.Users
+            .Where(x => x.Id == userId && x.IsActive)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.LastActivityAt, DateTime.UtcNow), ct);
+
+        return rows > 0 ? Results.Ok(new { ok = true }) : UserNotFound(userId);
+    }
+
+    private static async Task<IResult> DeleteAccountAsync(
+        Guid userId,
+        AccountDeletionService deletionService,
+        CancellationToken ct)
+    {
+        var deleted = await deletionService.DeleteAccountAsync(userId, ct);
+        return deleted ? Results.NoContent() : UserNotFound(userId);
     }
 
     private static IResult InvalidAutoDeleteMode()

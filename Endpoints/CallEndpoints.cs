@@ -118,6 +118,9 @@ public static class CallEndpoints
             BilledSeconds = 0
         };
 
+        // Starting a call counts as activity — reset the caller's inactivity clock.
+        creator.LastActivityAt = nowUtc;
+
         db.CallSessions.Add(session);
         db.CallParticipants.Add(creatorParticipant);
         await db.SaveChangesAsync(ct);
