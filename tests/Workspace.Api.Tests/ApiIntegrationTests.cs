@@ -389,6 +389,92 @@ public sealed class ApiIntegrationTests(ApiTestFactory factory) : IClassFixture<
         Assert.Single(carolBody);
     }
 
+    [Fact]
+    public async Task DeleteAccount_ShouldRemoveUserAndAllRelatedData_AndBeIdempotent()
+    {
+        using var client = factory.CreateClient();
+
+        var alice = await RegisterUserAsync(client, "AliceDel");
+        var bob = await RegisterUserAsync(client, "BobDel");
+
+        // Mutual contacts (Alice is ContactUserId in Bob's list — a Restrict FK).
+        (await client.PostAsJsonAsync("/api/contacts/add", new AddContactRequest
+        {
+            OwnerUserId = alice.UserId,
+            ContactCode = bob.Code
+        })).AssertStatus(HttpStatusCode.Created);
+        (await client.PostAsJsonAsync("/api/contacts/add", new AddContactRequest
+        {
+            OwnerUserId = bob.UserId,
+            ContactCode = alice.Code
+        })).AssertStatus(HttpStatusCode.Created);
+
+        // Messages both directions + a call Alice created (Restrict FKs).
+        await SendEncryptedAsync(client, alice.UserId, bob.UserId);
+        await SendEncryptedAsync(client, bob.UserId, alice.UserId);
+        (await client.PostAsJsonAsync("/api/calls/start", new StartCallRequest
+        {
+            CreatedByUserId = alice.UserId,
+            CalleeUserId = bob.UserId
+        })).AssertStatus(HttpStatusCode.OK);
+
+        // Delete Alice.
+        var delete = await client.DeleteAsync($"/api/users/{alice.UserId}");
+        delete.AssertStatus(HttpStatusCode.NoContent);
+
+        // Alice no longer exists.
+        (await client.PostAsync($"/api/users/{alice.UserId}/heartbeat", null))
+            .AssertStatus(HttpStatusCode.NotFound);
+
+        // Alice was removed from Bob's contact list (ContactUserId Restrict FK cleared).
+        var bobContacts = await client.GetAsync($"/api/contacts/{bob.UserId}");
+        bobContacts.AssertStatus(HttpStatusCode.OK);
+        Assert.Empty(await bobContacts.ReadRequiredAsync<List<ContactItemResponse>>());
+
+        // All of Bob's conversations with Alice are gone (messages deleted both ways).
+        var bobConversations = await client.GetAsync($"/api/messages/conversations/{bob.UserId}");
+        bobConversations.AssertStatus(HttpStatusCode.OK);
+        Assert.Empty(await bobConversations.ReadRequiredAsync<List<RecentConversationResponse>>());
+
+        // Deleting again is idempotent → 404.
+        (await client.DeleteAsync($"/api/users/{alice.UserId}")).AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Heartbeat_ShouldReturnOkForExistingUser_And404ForUnknown()
+    {
+        using var client = factory.CreateClient();
+
+        var user = await RegisterUserAsync(client, "HeartbeatUser");
+
+        (await client.PostAsync($"/api/users/{user.UserId}/heartbeat", null))
+            .AssertStatus(HttpStatusCode.OK);
+
+        (await client.PostAsync($"/api/users/{Guid.NewGuid()}/heartbeat", null))
+            .AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task AutoDeleteAccountSetting_ShouldRoundTrip()
+    {
+        using var client = factory.CreateClient();
+
+        var user = await RegisterUserAsync(client, "AccountSettingUser");
+
+        var initial = await client.GetAsync($"/api/users/{user.UserId}/auto-delete-account-setting");
+        initial.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("Never", (await initial.ReadRequiredAsync<AutoDeleteAccountSettingResponse>()).AutoDeleteMode);
+
+        var update = await client.PostAsJsonAsync("/api/users/auto-delete-account-setting",
+            new UpdateAutoDeleteAccountSettingRequest { UserId = user.UserId, Mode = "FiveDays" });
+        update.AssertStatus(HttpStatusCode.OK);
+        Assert.True((await update.ReadRequiredAsync<UpdateAutoDeleteAccountSettingResponse>()).Success);
+
+        var after = await client.GetAsync($"/api/users/{user.UserId}/auto-delete-account-setting");
+        after.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("FiveDays", (await after.ReadRequiredAsync<AutoDeleteAccountSettingResponse>()).AutoDeleteMode);
+    }
+
     private static async Task SendEncryptedAsync(HttpClient client, Guid senderUserId, Guid receiverUserId)
     {
         var response = await client.PostAsJsonAsync("/api/messages/send", new SendMessageRequest

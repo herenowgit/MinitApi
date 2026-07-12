@@ -32,8 +32,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasConversion<int>()
             .HasSentinel((AutoDeleteMessageMode)0)
             .HasDefaultValue(AutoDeleteMessageMode.OneHour);
+        user.Property(x => x.AutoDeleteAccountMode)
+            .HasConversion<int>()
+            .HasSentinel((AutoDeleteAccountMode)0)
+            .HasDefaultValue(AutoDeleteAccountMode.Never);
         user.Property(x => x.IsActive).HasDefaultValue(true);
         user.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone");
+        user.Property(x => x.LastActivityAt).HasColumnType("timestamp with time zone");
+        user.HasIndex(x => new { x.AutoDeleteAccountMode, x.LastActivityAt });
         user.Property(x => x.PublicKey).HasMaxLength(1024);
         user.Property(x => x.PublicKeyUpdatedAt).HasColumnType("timestamp with time zone");
         user.HasIndex(x => x.Code).IsUnique();
